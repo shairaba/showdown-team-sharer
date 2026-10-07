@@ -5,14 +5,23 @@
 //     the currently-open team via window.PS, using the client's own exporter
 //     (PS.rooms[roomId].editor.export(true)) so we never have to duplicate its
 //     Pokédex/move/item data ourselves.
-//  2. Make the actual cross-origin POST requests to Pokepast.es / VRPastes.
-//     This has to happen here (not in the content script) because extensions
-//     with host_permissions bypass normal CORS restrictions, while the page's
-//     own fetch()/form POSTs would be subject to the target site's CORS policy.
+//  2. Make the actual cross-origin POST requests to Pokepast.es / VRPastes /
+//     PokeBin. This has to happen here (not in the content script) because
+//     extensions with host_permissions bypass normal CORS restrictions, while
+//     the page's own fetch()/form POSTs would be subject to the target site's
+//     CORS policy.
+//  3. For PokeBin's password-protected pastes, encrypt client-side using the
+//     same construction as PokeBin's own code (Argon2id -> AES-256-CTR, see
+//     deriveKey()/pokebinEncrypt() below) so the result opens correctly on
+//     pokebin.com. See the long comment above pokebinEncrypt() for why this
+//     is a local reimplementation rather than a call into PokeBin's own WASM.
+
+importScripts('vendor/argon2.umd.min.js'); // exposes self.hashwasm.argon2id
 
 const POKEPASTE_CREATE_URL = 'https://pokepast.es/create';
 const VRPASTES_API_URL = 'https://vrpaste-backend.vercel.app/api/paste';
 const VRPASTES_SITE = 'https://www.vrpastes.com';
+const POKEBIN_CREATE_URL = 'https://pokebin.com/create';
 
 // Runs inside the page itself (MAIN world), not the content script's isolated
 // world, so it must be fully self-contained (no references to outer scope).
@@ -126,6 +135,131 @@ async function uploadToVrpastes({ raw, isPublic }) {
   return { ok: true, url };
 }
 
+// --- PokeBin password encryption ---
+//
+// PokeBin's own password protection (see github.com/malaow3/PokeBin,
+// wasm/crypto.zig) derives a key with Argon2id and encrypts with AES-256 in
+// a raw counter mode it labels "gcm" (it isn't actually GCM: the "tag" is
+// just AES(key, 0-block) XORed into the first 16 bytes of ciphertext, not a
+// real GMAC/HMAC over the whole message). The output format is
+// "gcm:<salt hex>:<nonce hex>:<ciphertext+tag hex>".
+//
+// Their WASM module's random salt/nonce generation has a real bug: its Zig
+// `init()` stores a pointer to a local stack variable (`rand = &rand_inst`)
+// that's gone by the time it's read back, so the salt and nonce it produces
+// come out all-zero every time (confirmed by running their published WASM
+// binary directly - see https://pokebin.com/wasm). That makes the derived
+// key deterministic per-password and reuses the same CTR keystream across
+// every paste encrypted with that password, which breaks confidentiality if
+// a password is ever reused. Calling into their WASM would inherit that bug.
+//
+// Decryption only reads the salt/nonce from the string, so a real random
+// salt/nonce here is fully compatible with pokebin.com's own decryptor while
+// not inheriting the vulnerability. This was verified by round-tripping
+// against PokeBin's actual published WASM module in both directions before
+// wiring it in here.
+const POKEBIN_ARGON2_PARALLELISM = 2;
+const POKEBIN_ARGON2_ITERATIONS = 1;
+const POKEBIN_ARGON2_MEMORY_KIB = 32 * 1024;
+const POKEBIN_KEY_LENGTH = 32;
+
+function bytesToHex(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function pokebinDeriveKey(passphrase, salt) {
+  const keyBytes = await self.hashwasm.argon2id({
+    password: passphrase,
+    salt,
+    parallelism: POKEBIN_ARGON2_PARALLELISM,
+    iterations: POKEBIN_ARGON2_ITERATIONS,
+    memorySize: POKEBIN_ARGON2_MEMORY_KIB,
+    hashLength: POKEBIN_KEY_LENGTH,
+    outputType: 'binary',
+  });
+  return crypto.subtle.importKey('raw', keyBytes, { name: 'AES-CTR' }, false, ['encrypt']);
+}
+
+async function pokebinAesCtr(key, counter, data) {
+  const out = await crypto.subtle.encrypt({ name: 'AES-CTR', counter, length: 128 }, key, data);
+  return new Uint8Array(out);
+}
+
+async function pokebinEncrypt(message, passphrase) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const key = await pokebinDeriveKey(passphrase, salt);
+
+  const counter = new Uint8Array(16);
+  counter.set(nonce, 0);
+  const messageBytes = new TextEncoder().encode(message);
+  const ciphertext = await pokebinAesCtr(key, counter, messageBytes);
+
+  // tag = AES_encrypt(key, 0-block) XOR ciphertext[:16], matching PokeBin's
+  // "simplified GMAC". AES-CTR of a zero counter over a zero-block plaintext
+  // gives exactly AES_encrypt(key, 0) without needing a separate ECB call.
+  const aesOfZero = await pokebinAesCtr(key, new Uint8Array(16), new Uint8Array(16));
+  const tag = aesOfZero.slice();
+  for (let j = 0; j < 16 && j < ciphertext.length; j++) tag[j] ^= ciphertext[j];
+
+  const combined = new Uint8Array(ciphertext.length + 16);
+  combined.set(ciphertext, 0);
+  combined.set(tag, ciphertext.length);
+
+  return `gcm:${bytesToHex(salt)}:${bytesToHex(nonce)}:${bytesToHex(combined)}`;
+}
+
+function utf8ToBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+async function uploadToPokebin({ raw, name, format, username, password }) {
+  const baseData = {
+    title: name || '',
+    author: username || '',
+    notes: '',
+    format: format || '',
+    rental: '',
+    content: raw,
+  };
+
+  let formPayload;
+  if (password) {
+    let encryptedStr;
+    try {
+      encryptedStr = await pokebinEncrypt(JSON.stringify(baseData), password);
+    } catch (err) {
+      return { ok: false, error: 'Failed to encrypt the paste: ' + err.message };
+    }
+    formPayload = { encrypted: true, data: encryptedStr };
+  } else {
+    formPayload = { encrypted: false, data: baseData };
+  }
+
+  const encoded = utf8ToBase64(JSON.stringify(formPayload));
+
+  let res;
+  try {
+    res = await fetch(POKEBIN_CREATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(encoded),
+    });
+  } catch (err) {
+    return { ok: false, error: 'Network error contacting PokeBin: ' + err.message };
+  }
+
+  // PokeBin's /create responds 302 -> /<uuid>; fetch follows it, so res.url
+  // is already the final paste link.
+  if (!res.ok) {
+    return { ok: false, error: `PokeBin returned an error (HTTP ${res.status}).` };
+  }
+  return { ok: true, url: res.url };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.type !== 'teamSharer:upload') return undefined;
 
@@ -147,6 +281,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       result = await uploadToPokepaste(team);
     } else if (msg.target === 'vrpastes') {
       result = await uploadToVrpastes({ raw: team.raw, isPublic: msg.isPublic });
+    } else if (msg.target === 'pokebin') {
+      result = await uploadToPokebin({ ...team, password: msg.password });
     } else {
       result = { ok: false, error: 'Unknown upload target: ' + msg.target };
     }

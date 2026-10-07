@@ -9,6 +9,7 @@ const BUTTONS = [
   { target: 'pokepaste', label: 'Upload to Pokepast.es', icon: 'fa-upload' },
   { target: 'vrpastes', isPublic: true, label: 'Share Open Team Sheet to VRPastes', icon: 'fa-eye' },
   { target: 'vrpastes', isPublic: false, label: 'Share Full Paste to VRPastes', icon: 'fa-lock' },
+  { target: 'pokebin', label: 'Upload to PokeBin', icon: 'fa-upload', withPassword: true },
 ];
 
 function buildButtonRow(panelEl) {
@@ -22,6 +23,16 @@ function buildButtonRow(panelEl) {
 
   const buttonWrap = document.createElement('p');
   for (const cfg of BUTTONS) {
+    if (cfg.withPassword) {
+      const passwordInput = document.createElement('input');
+      passwordInput.type = 'password';
+      passwordInput.className = 'textbox team-sharer-password';
+      passwordInput.placeholder = 'PokeBin password (optional)';
+      passwordInput.autocomplete = 'off';
+      buttonWrap.appendChild(passwordInput);
+      buttonWrap.appendChild(document.createTextNode(' '));
+    }
+
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'button team-sharer-btn';
@@ -49,11 +60,16 @@ async function handleClick(button, panelEl, cfg) {
   button.innerHTML = `<i class="fa fa-spinner fa-pulse" aria-hidden="true"></i> Uploading…`;
   setStatus(status, '', null);
 
+  const passwordInput = cfg.withPassword ? row.querySelector('.team-sharer-password') : null;
+  const password = passwordInput ? passwordInput.value : undefined;
+  if (passwordInput) passwordInput.value = ''; // don't leave the plaintext sitting in the DOM
+
   try {
     const res = await chrome.runtime.sendMessage({
       type: 'teamSharer:upload',
       target: cfg.target,
       isPublic: cfg.isPublic,
+      password,
       roomId,
     });
 
@@ -78,7 +94,7 @@ async function handleClick(button, panelEl, cfg) {
 }
 
 function setRowDisabled(row, disabled) {
-  row.querySelectorAll('button').forEach(b => { b.disabled = disabled; });
+  row.querySelectorAll('button, input').forEach(el => { el.disabled = disabled; });
 }
 
 function setStatus(statusEl, text, kind) {
