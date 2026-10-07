@@ -1,0 +1,30 @@
+.team-sharer-row {
+	padding-top: 0;
+}
+
+.team-sharer-label {
+	font-weight: bold;
+	margin-bottom: 4px;
+}
+
+.team-sharer-btn {
+	margin: 2px 4px 2px 0;
+}
+
+.team-sharer-status {
+	font-size: 12px;
+	word-break: break-all;
+	min-height: 14px;
+}
+
+.team-sharer-status-success {
+	color: #2e7d32;
+}
+
+.team-sharer-status-warn {
+	color: #b8860b;
+}
+
+.team-sharer-status-error {
+	color: #c62828;
+}
