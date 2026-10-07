@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Showdown Team Sharer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Adds buttons to the Pokémon Showdown teambuilder to upload the current team to Pokepast.es, VRPastes, or PokeBin.",
   "permissions": ["scripting"],
   "host_permissions": [

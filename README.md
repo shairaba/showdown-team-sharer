@@ -22,31 +22,6 @@ password-protected).
   CORS restrictions that would otherwise block a cross-origin POST from the
   page.
 
-## PokeBin password protection
-
-PokeBin pastes can optionally be encrypted with a password. Their scheme
-(see `github.com/malaow3/PokeBin`, `wasm/crypto.zig`) is Argon2id for key
-derivation, then AES-256 in a raw counter mode they label "gcm" (it isn't
-actual AES-GCM: the "tag" is just `AES(key, 0-block)` XORed into the first
-16 bytes of ciphertext, not a real MAC over the whole message).
-
-While implementing this I found that PokeBin's own WASM module has a bug:
-its Zig `init()` stores a pointer to a local stack variable
-(`rand = &rand_inst`) that's gone by the time it's read back, so the random
-salt/nonce it generates come out all-zero every time — confirmed by running
-their published WASM binary directly. That makes the derived key
-deterministic per password and reuses the same keystream across every paste
-encrypted with that password, which breaks confidentiality if a password is
-ever reused on their site.
-
-[background.js](background.js) reimplements their exact construction in JS
-(Argon2id via a vendored [hash-wasm](https://github.com/Daninet/hash-wasm)
-build, AES-CTR via the Web Crypto API) but generates real random salt/nonce
-with `crypto.getRandomValues()`. Decryption only reads the salt/nonce from
-the string itself, so this stays fully compatible with pokebin.com's own
-decryptor — verified by round-tripping against their actual published WASM
-module in both directions — without inheriting the vulnerability.
-
 ## Install (unpacked)
 
 1. Open `chrome://extensions`.
