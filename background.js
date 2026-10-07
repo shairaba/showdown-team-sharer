@@ -67,12 +67,19 @@ async function readTeam(tabId, roomId) {
   return result || { ok: false, error: 'Could not read the team from the page.' };
 }
 
-async function uploadToPokepaste({ raw, name, format, username }) {
+async function uploadToPokepaste({ raw, name, username }) {
   const body = new URLSearchParams();
-  body.set('title', name || 'Untitled team');
+  body.set('title', name || '');
   body.set('paste', raw);
   body.set('author', username || '');
-  if (format && format !== 'gen9') body.set('notes', `Format: ${format}`);
+  body.set('notes', '');
+  // Deliberately not sending "Format: <id>" in notes (the old pre-overhaul
+  // Showdown client's convention) - pokepast.es visibly parses that string
+  // to show a Format badge and apparently does extra format-aware lookups
+  // (e.g. Mega Evolution legality) for sprite selection. For newer/unusual
+  // format ids like VGC "Champions" regulations, that lookup appears to
+  // fail and breaks sprite rendering for the whole paste. Title/author are
+  // plain display text with no such special parsing, so they're kept.
 
   let res;
   try {
