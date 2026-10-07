@@ -33,10 +33,21 @@
 	z-index: 5;
 	margin-top: 2px;
 	padding: 8px;
-	background: #222;
-	border: 1px solid #555;
+	background: #fff;
+	color: #000;
+	border: 1px solid #ccc;
 	border-radius: 3px;
 	white-space: nowrap;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Showdown toggles its dark theme via a .dark class on an ancestor
+   element (see e.g. ".dark .tabbar a.button" in their own oldclient.css),
+   so follow the same convention rather than hardcoding one theme. */
+.dark .team-sharer-dropdown-menu {
+	background: #222;
+	color: #eee;
+	border-color: #555;
 	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
