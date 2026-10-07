@@ -82,6 +82,12 @@ function buildVrpastesDropdown(panelEl) {
   fullLabel.appendChild(fullCheckbox);
   fullLabel.appendChild(document.createTextNode(' Full Paste'));
 
+  const passwordInput = document.createElement('input');
+  passwordInput.type = 'password';
+  passwordInput.className = 'textbox team-sharer-password';
+  passwordInput.placeholder = 'Password (optional)';
+  passwordInput.autocomplete = 'off';
+
   const shareBtn = document.createElement('button');
   shareBtn.type = 'button';
   shareBtn.className = 'button';
@@ -89,13 +95,15 @@ function buildVrpastesDropdown(panelEl) {
 
   menu.appendChild(otsLabel);
   menu.appendChild(fullLabel);
+  menu.appendChild(passwordInput);
   menu.appendChild(shareBtn);
   details.appendChild(menu);
 
-  shareBtn.addEventListener('click', () => {
+  const share = () => {
     const jobs = [];
-    if (otsCheckbox.checked) jobs.push({ target: 'vrpastes', isPublic: true, label: 'VRPastes (OTS)' });
-    if (fullCheckbox.checked) jobs.push({ target: 'vrpastes', isPublic: false, label: 'VRPastes (Full)' });
+    const password = passwordInput.value;
+    if (otsCheckbox.checked) jobs.push({ target: 'vrpastes', isPublic: true, password, label: 'VRPastes (OTS)' });
+    if (fullCheckbox.checked) jobs.push({ target: 'vrpastes', isPublic: false, password, label: 'VRPastes (Full)' });
     if (!jobs.length) {
       const row = details.closest('.team-sharer-row');
       renderStatusLines(row.querySelector('.team-sharer-status'), [
@@ -103,8 +111,17 @@ function buildVrpastesDropdown(panelEl) {
       ]);
       return;
     }
+    passwordInput.value = ''; // don't leave the plaintext sitting in the DOM
     details.open = false;
     runUpload(panelEl, summary, jobs);
+  };
+
+  shareBtn.addEventListener('click', share);
+  passwordInput.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      share();
+    }
   });
 
   return details;

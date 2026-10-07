@@ -108,14 +108,17 @@ function deriveVrpastesUrl(data) {
   return id ? `${VRPASTES_SITE}/${id}` : null;
 }
 
-async function uploadToVrpastes({ raw, isPublic }) {
+async function uploadToVrpastes({ raw, isPublic, password }) {
+  const payload = { raw, is_public: !!isPublic };
+  if (password) payload.password = password;
+
   let res;
   let text;
   try {
     res = await fetch(VRPASTES_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw, is_public: !!isPublic }),
+      body: JSON.stringify(payload),
     });
     text = await res.text();
   } catch (err) {
@@ -287,7 +290,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.target === 'pokepaste') {
       result = await uploadToPokepaste(team);
     } else if (msg.target === 'vrpastes') {
-      result = await uploadToVrpastes({ raw: team.raw, isPublic: msg.isPublic });
+      result = await uploadToVrpastes({ raw: team.raw, isPublic: msg.isPublic, password: msg.password });
     } else if (msg.target === 'pokebin') {
       result = await uploadToPokebin({ ...team, password: msg.password });
     } else {

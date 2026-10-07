@@ -2,8 +2,8 @@
 
 Chrome extension that restores the "upload to Pokepast.es" button the new
 Pokémon Showdown teambuilder removed, and adds the same for VRPastes
-(as either an Open Team Sheet or a full paste) and PokeBin (optionally
-password-protected).
+(as an Open Team Sheet, a full paste, or both — optionally
+password-protected) and PokeBin (optionally password-protected).
 
 ## How it works
 
