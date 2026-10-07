@@ -27,15 +27,3 @@ Pokémon Showdown teambuilder removed, and adds the same for VRPastes
 3. Click "Load unpacked" and select this folder.
 4. Go to https://play.pokemonshowdown.com/teambuilder, open any team, and
    you'll see the new buttons under the team name field.
-
-## Known caveat
-
-The VRPastes upload parses the backend's JSON response to find the new
-paste's id/URL. I confirmed the shape via `GET /api/paste/<id>` (returns a
-top-level `"id"` field, and paste pages live at `https://www.vrpastes.com/
-<id>`), and assumed the `POST /api/paste` response matches — this is the
-standard REST create convention, but wasn't directly verified against a live
-POST. If a VRPastes upload succeeds but the extension can't find the link
-(you'll see a status message saying so, and the raw response is passed back
-to the content script), let me know what the response actually looked like
-and I'll fix `deriveVrpastesUrl()` in `background.js`.
